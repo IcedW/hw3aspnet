@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import MovieList from './components/MovieList.jsx'
 import MovieForm from './components/MovieForm.jsx'
-import { getMovies, createMovie, updateMovie, deleteMovie } from './api.js'
+import LanguageSwitcher from './components/LanguageSwitcher.jsx'
+import { getMovies, getMovieTranslations, createMovie, updateMovie, deleteMovie } from './api.js'
+import { useI18n } from './i18n/I18nContext.jsx'
 
 export default function App() {
+  const { language, t } = useI18n()
   const [movies, setMovies] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
@@ -22,7 +25,8 @@ export default function App() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(loadMovies, [])
+  // Список перезавантажується при зміні мови: бекенд повертає тексти фільмів обраною мовою
+  useEffect(loadMovies, [language])
 
   function openCreateForm() {
     setEditingMovie(null)
@@ -30,10 +34,16 @@ export default function App() {
     setShowForm(true)
   }
 
-  function openEditForm(movie) {
-    setEditingMovie(movie)
-    setFormError(null)
-    setShowForm(true)
+  // Для редагування потрібні всі переклади фільму, а не лише поточна мова
+  async function openEditForm(movie) {
+    try {
+      const full = await getMovieTranslations(movie.id)
+      setEditingMovie(full)
+      setFormError(null)
+      setShowForm(true)
+    } catch (err) {
+      alert(err.message)
+    }
   }
 
   async function handleSubmit(form) {
@@ -51,7 +61,7 @@ export default function App() {
   }
 
   async function handleDelete(id) {
-    if (!confirm('Видалити цей фільм?')) return
+    if (!confirm(t('app.confirmDelete'))) return
     try {
       await deleteMovie(id)
       loadMovies()
@@ -63,12 +73,15 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <h1>Кінопошук</h1>
-        {!showForm && <button onClick={openCreateForm}>+ Додати фільм</button>}
+        <h1>{t('app.title')}</h1>
+        <div className="header-controls">
+          <LanguageSwitcher />
+          {!showForm && <button onClick={openCreateForm}>{t('app.addMovie')}</button>}
+        </div>
       </header>
 
-      {loading && <p>Завантаження...</p>}
-      {loadError && <p className="error">Не вдалося завантажити фільми: {loadError}</p>}
+      {loading && <p>{t('app.loading')}</p>}
+      {loadError && <p className="error">{t('app.loadError', { error: loadError })}</p>}
 
       {!loading && !loadError && !showForm && (
         <MovieList movies={movies} onEdit={openEditForm} onDelete={handleDelete} />

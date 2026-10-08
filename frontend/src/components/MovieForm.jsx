@@ -1,85 +1,145 @@
 import { useState, useEffect } from 'react'
+import { LANGUAGES, languageName } from '../i18n/index.js'
+import { useI18n } from '../i18n/I18nContext.jsx'
 
-const emptyForm = { title: '', director: '', genre: '', releaseYear: '', description: '', poster: null }
+const emptyTranslation = { title: '', director: '', genre: '', description: '' }
+const FIELDS = ['title', 'director', 'genre', 'description']
+
+function emptyTranslations() {
+  return Object.fromEntries(LANGUAGES.map((l) => [l.code, { ...emptyTranslation }]))
+}
+
+const isFilled = (tr) => FIELDS.some((f) => tr[f].trim() !== '')
+const isComplete = (tr) => FIELDS.every((f) => tr[f].trim() !== '')
 
 export default function MovieForm({ initialMovie, onSubmit, onCancel, errorMessage }) {
-  const [form, setForm] = useState(emptyForm)
+  const { language, t } = useI18n()
+  const [releaseYear, setReleaseYear] = useState('')
+  const [poster, setPoster] = useState(null)
+  const [translations, setTranslations] = useState(emptyTranslations)
+  const [activeLang, setActiveLang] = useState(language)
+  const [localError, setLocalError] = useState(null)
 
   useEffect(() => {
+    const next = emptyTranslations()
     if (initialMovie) {
-      setForm({
-        title: initialMovie.title,
-        director: initialMovie.director,
-        genre: initialMovie.genre,
-        releaseYear: initialMovie.releaseYear,
-        description: initialMovie.description,
-        poster: null,
+      initialMovie.translations.forEach((tr) => {
+        if (next[tr.culture]) {
+          next[tr.culture] = {
+            title: tr.title,
+            director: tr.director,
+            genre: tr.genre,
+            description: tr.description,
+          }
+        }
       })
+      setReleaseYear(initialMovie.releaseYear)
     } else {
-      setForm(emptyForm)
+      setReleaseYear('')
     }
+    setTranslations(next)
+    setPoster(null)
+    setLocalError(null)
   }, [initialMovie])
 
   function handleChange(e) {
     const { name, value } = e.target
-    setForm((prev) => ({ ...prev, [name]: value }))
-  }
-
-  function handleFileChange(e) {
-    setForm((prev) => ({ ...prev, poster: e.target.files[0] || null }))
+    setTranslations((prev) => ({ ...prev, [activeLang]: { ...prev[activeLang], [name]: value } }))
   }
 
   function handleSubmit(e) {
     e.preventDefault()
-    onSubmit(form)
+
+    // Відправляємо лише ті мови, у яких щось введено; кожна має бути заповнена повністю
+    const filled = LANGUAGES.filter((l) => isFilled(translations[l.code]))
+    if (filled.length === 0) {
+      setLocalError(t('form.errNoTranslation'))
+      return
+    }
+    const incomplete = filled.find((l) => !isComplete(translations[l.code]))
+    if (incomplete) {
+      setActiveLang(incomplete.code)
+      setLocalError(t('form.errIncomplete', { lang: languageName(incomplete.code) }))
+      return
+    }
+
+    setLocalError(null)
+    onSubmit({
+      releaseYear,
+      poster,
+      translations: filled.map((l) => ({ culture: l.code, ...translations[l.code] })),
+    })
   }
+
+  const current = translations[activeLang]
+  const error = localError || errorMessage
 
   return (
     <form className="movie-form" onSubmit={handleSubmit}>
-      <h2>{initialMovie ? 'Редагування фільму' : 'Новий фільм'}</h2>
-      {errorMessage && <p className="error">{errorMessage}</p>}
+      <h2>{initialMovie ? t('form.titleEdit') : t('form.titleNew')}</h2>
+      {error && <p className="error">{error}</p>}
 
       <label>
-        Назва
-        <input name="title" value={form.title} onChange={handleChange} required maxLength={200} />
-      </label>
-
-      <label>
-        Режисер
-        <input name="director" value={form.director} onChange={handleChange} required maxLength={100} />
-      </label>
-
-      <label>
-        Жанр
-        <input name="genre" value={form.genre} onChange={handleChange} required maxLength={50} />
-      </label>
-
-      <label>
-        Рік випуску
+        {t('form.year')}
         <input
           type="number"
-          name="releaseYear"
-          value={form.releaseYear}
-          onChange={handleChange}
+          value={releaseYear}
+          onChange={(e) => setReleaseYear(e.target.value)}
           required
           min={1888}
           max={2100}
         />
       </label>
 
-      <label>
-        Опис
-        <textarea name="description" value={form.description} onChange={handleChange} required maxLength={2000} rows={4} />
-      </label>
+      <fieldset className="translations">
+        <legend>{t('form.translations')}</legend>
+        <p className="hint">{t('form.translationsHint')}</p>
+
+        <div className="tabs" role="tablist">
+          {LANGUAGES.map((l) => (
+            <button
+              key={l.code}
+              type="button"
+              role="tab"
+              aria-selected={l.code === activeLang}
+              className={l.code === activeLang ? 'tab active' : 'tab'}
+              onClick={() => setActiveLang(l.code)}
+            >
+              {l.name}
+              {isFilled(translations[l.code]) && <span className="tab-mark"> ✓</span>}
+            </button>
+          ))}
+        </div>
+
+        <label>
+          {t('form.title')}
+          <input name="title" value={current.title} onChange={handleChange} maxLength={200} />
+        </label>
+
+        <label>
+          {t('form.director')}
+          <input name="director" value={current.director} onChange={handleChange} maxLength={100} />
+        </label>
+
+        <label>
+          {t('form.genre')}
+          <input name="genre" value={current.genre} onChange={handleChange} maxLength={50} />
+        </label>
+
+        <label>
+          {t('form.description')}
+          <textarea name="description" value={current.description} onChange={handleChange} maxLength={2000} rows={4} />
+        </label>
+      </fieldset>
 
       <label>
-        Постер {initialMovie ? '(залиште порожнім, щоб не змінювати)' : ''}
-        <input type="file" accept="image/*" onChange={handleFileChange} />
+        {t('form.poster')} {initialMovie ? t('form.posterKeep') : ''}
+        <input type="file" accept="image/*" onChange={(e) => setPoster(e.target.files[0] || null)} />
       </label>
 
       <div className="actions">
-        <button type="submit">Зберегти</button>
-        <button type="button" onClick={onCancel}>Скасувати</button>
+        <button type="submit">{t('form.save')}</button>
+        <button type="button" onClick={onCancel}>{t('form.cancel')}</button>
       </div>
     </form>
   )
